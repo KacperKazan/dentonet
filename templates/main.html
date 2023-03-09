@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Forums</h1>
+    <ul>
+        {% for collection in collections %}
+            <li><a href="{{ url_for('forum', collection_name=collection) }}">{{ collection }}</a>
+            </li>
+        {% endfor %}
+    </ul>
+{% endblock %}

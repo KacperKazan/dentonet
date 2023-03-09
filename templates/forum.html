@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>{{ collection_name }}</h1>
+
+<!-- Announcements -->
+{% if announcements %}
+<h2>Announcements</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th scope="col">Title</th>
+      <th scope="col">Author</th>
+      <th scope="col">Datetime</th>
+      <th scope="col">Replies</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for thread in announcements %}
+    <tr>
+      <td><a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id']) }}">{{ thread['title'] }}</a></td>
+      <td>{{ thread['author']['username'] }}</td>
+      <td>{{ thread.date }}</td>
+      <td>{{ thread['num_replies'] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- Topics -->
+{% if topics %}
+<h2>Topics</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th scope="col">Title</th>
+      <th scope="col">Author</th>
+      <th scope="col">Datetime</th>
+      <th scope="col">Replies</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for thread in topics %}
+    <tr>
+      <td><a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id']) }}">{{ thread['title'] }}</a></td>
+      <td>{{ thread['author']['username'] }}</td>
+      <td>{{ thread.date }}</td>
+      <td>{{ thread['num_replies'] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Pagination links -->
+{% if num_pages > 1 %}
+    <div class="pagination">
+        <a href="{{ url_for('forum', collection_name=collection_name, page=1) }}"> {{ 1 }}</a>
+
+        {% if topics_pagination.has_prev %}
+            <a href="{{ url_for('forum', collection_name=collection_name, page=prev_page) }}">&laquo; Prev</a>
+        {% endif %}
+        
+        <!-- {% for page_num in topics_pagination.pages %}
+            {% if page_num %}
+                {% if page_num == topics_pagination.page %}
+                    <span class="current-page">{{ page_num }}</span>
+                {% else %}
+                    <a href="{{ url_for('forum', collection_name=collection_name, page=page_num) }}">{{ page_num }}</a>
+                {% endif %}
+            {% else %}
+                <span class="ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %} -->
+        
+        <a href="{{ url_for('forum', collection_name=collection_name, page=topics_pagination.page) }}" class="disabled"> {{topics_pagination.page}} </a>
+
+
+        {% if topics_pagination.has_next %}
+            <a href="{{ url_for('forum', collection_name=collection_name, page=next_page) }}">Next &raquo;</a>
+        {% endif %}
+
+        <a href="{{ url_for('forum', collection_name=collection_name, page=num_page) }}"> {{ num_pages}}</a>
+    </div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

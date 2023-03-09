@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ thread.title }}</h2>
+<p>By {{ thread.author.username }} on {{ thread.date }}</p>
+<hr>
+<div class="container">
+    {% for post in posts %}
+    <div class="card mb-3 border border-primary">
+        <div class="card-header">
+            {{ post.author.username }} on {{ post.datetime }}
+        </div>
+        <div class="card-body">
+            {{ parse_html(post.html) | safe }}
+        </div>
+    </div>
+    <br>
+    <hr>
+    {% endfor %}
+</div>
+
+{% if num_pages > 1 %}
+<nav aria-label="Page navigation">
+    <ul class="pagination justify-content-center">
+        {% if prev_page %}
+        <li class="page-item">
+            <a class="page-link"
+                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=prev_page) }}"
+                aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {% endif %}
+        {% for page_num in range(1, num_pages+1) %}
+        {% if page_num == page %}
+        <li class="page-item active"><a class="page-link" href="#">{{ page_num
+                }}</a></li>
+        {% else %}
+        <li class="page-item"><a class="page-link"
+                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=page_num) }}">{{
+                page_num }}</a></li>
+        {% endif %}
+        {% endfor %}
+        {% if next_page %}
+        <li class="page-item">
+            <a class="page-link"
+                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=next_page) }}"
+                aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
