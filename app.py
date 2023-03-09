@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, url_for
 from pymongo import MongoClient
 import pymongo
 import math
 from flask_paginate import Pagination, get_page_parameter
+
 # import ObjectId from bson.objectid
 from bson.objectid import ObjectId
 
@@ -66,7 +67,8 @@ def parse_html(html):
 
 
 @app.route('/thread/<collection_name>/<thread_id>')
-def thread(collection_name, thread_id):
+@app.route('/thread/<collection_name>/<thread_id>/<int:page>')
+def thread(collection_name, thread_id, page=1):
     # Query the database for the selected thread object and all posts in the thread
     thread = db[collection_name].find_one({'_id': ObjectId(thread_id)})
     posts = thread['posts']
@@ -75,8 +77,25 @@ def thread(collection_name, thread_id):
     posts_per_page = 10
     num_pages = int(math.ceil(len(posts) / posts_per_page))
 
+    # Paginate the posts based on the current page
+    start_idx = (page - 1) * posts_per_page
+    end_idx = start_idx + posts_per_page
+    paginated_posts = posts[start_idx:end_idx]
+
+    # Generate the pagination links
+    prev_page = page - 1 if page > 1 else None
+    next_page = page + 1 if page < num_pages else None
+    pages = []
+
+    for i in range(1, num_pages + 1):
+        if i == page:
+            pages.append({'num': i, 'url': None})
+        else:
+            pages.append({'num': i, 'url': url_for('thread', collection_name=collection_name, thread_id=thread_id, page=i)})
+
     # Render the thread.html template with the thread object, posts, and pagination variables
-    return render_template('thread.html', collection_name=collection_name, thread=thread, posts=posts, num_pages=num_pages, parse_html=parse_html)
+    return render_template('thread.html', collection_name=collection_name, thread=thread, posts=paginated_posts, prev_page=prev_page, next_page=next_page, pages=pages, num_pages=num_pages, current_page=page, parse_html=parse_html)
+
 
 
 @app.route('/search', methods=['GET', 'POST'])

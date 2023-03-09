@@ -18,38 +18,29 @@
     {% endfor %}
 </div>
 
+
+<!-- Pagination links -->
 {% if num_pages > 1 %}
-<nav aria-label="Page navigation">
-    <ul class="pagination justify-content-center">
+    <div class="pagination">
+        <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=1) }}" class="current-page {{'disabled' if current_page == 1 else ''}}">{{ 1 }}</a>
+
         {% if prev_page %}
-        <li class="page-item">
-            <a class="page-link"
-                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=prev_page) }}"
-                aria-label="Previous">
-                <span aria-hidden="true">&laquo;</span>
-            </a>
-        </li>
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=prev_page) }}">&laquo; Prev</a>
         {% endif %}
-        {% for page_num in range(1, num_pages+1) %}
-        {% if page_num == page %}
-        <li class="page-item active"><a class="page-link" href="#">{{ page_num
-                }}</a></li>
-        {% else %}
-        <li class="page-item"><a class="page-link"
-                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=page_num) }}">{{
-                page_num }}</a></li>
+
+        <!-- if -->
+        {% if current_page != 1 and current_page != num_pages %}
+            <a class="current-page disabled">{{ current_page }}</a>
         {% endif %}
-        {% endfor %}
+
         {% if next_page %}
-        <li class="page-item">
-            <a class="page-link"
-                href="{{ url_for('thread', collection_name=collection_name, thread_id=thread_id, page=next_page) }}"
-                aria-label="Next">
-                <span aria-hidden="true">&raquo;</span>
-            </a>
-        </li>
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=next_page) }}">Next &raquo;</a>
         {% endif %}
-    </ul>
-</nav>
+
+        <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=num_pages) }}" class="current-page {{'disabled' if current_page == num_pages else ''}}">{{ num_pages }}</a>
+
+    </div>
+
 {% endif %}
+
 {% endblock %}
