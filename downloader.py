@@ -135,10 +135,14 @@ class User:
 
 class Forum:
     def __init__(self, title, link):
-        self.title = title
+        self.title = self.process_title(title)
         link = remove_sid_from_link(link)
         self.link = link
         self.increment = 25
+    
+    def process_title(self, title):
+        # remove '.' from title
+        return title.replace('.', '')
 
     def get_page_link_at_index(self, idx):
         return self.link + f'&start={idx * self.increment}'
@@ -340,6 +344,8 @@ class Thread:
         posts = soup.find_all('div', {'class': 'post'})
         for post in posts:
             parsed_post = Post(post)
+            # TODO: if post.html is just an 'a' ref tag, continue
+            
             yield parsed_post
 
     def get_all_thread_posts(self):
@@ -425,15 +431,13 @@ def check_link_in_collection(link, collection):
     return out
 # %%
 total_threads = 28918
-total_threads = 4628 # for Forum ogólnostomatologiczne
 p_bar = tqdm(total=total_threads)
 for main_section in main_sections:
-    break
     for forum in main_section.forums:
-        # Insert forum object into MongoDB collection
-        if forum.title != 'Forum ogólnostomatologiczne':
+        if not forum.title:
+            print('skipping: ', forum.title)
             continue
-
+        print('\nDownloading forum: ', forum.title)
         collection = db[forum.title]
         f_dict = forum.__dict__()
         f_dict['section'] = main_section.header_text
@@ -502,6 +506,7 @@ for main_section in main_sections:
             p_bar.update(1)
 p_bar.close()
 print('Done')
+quit()
 # %%
 # print all collections in the database
 # for collection in db.list_collection_names():
