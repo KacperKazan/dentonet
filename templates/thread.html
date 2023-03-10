@@ -10,7 +10,7 @@
             {{ post.author.username }} on {{ post.datetime }}
         </div>
         <div class="card-body">
-            {{ parse_html(post.html) | safe }}
+            {{ parse_html(post.html, mark) | safe }}
         </div>
     </div>
     <br>
@@ -22,7 +22,11 @@
 <!-- Pagination links -->
 {% if num_pages > 1 %}
     <div class="pagination">
-        <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=1) }}" class="current-page {{'disabled' if current_page == 1 else ''}}">{{ 1 }}</a>
+        {% if current_page == 1%}
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=1) }}" class="current-page {{'disabled' if current_page == 1 else ''}}" style="color: white; background-color: black; background: black;">{{ 1 }}</a>
+        {% else %}
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=1) }}" class="current-page {{'disabled' if current_page == 1 else ''}}" >{{ 1 }}</a>
+        {% endif %}
 
         {% if prev_page %}
             <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=prev_page) }}">&laquo; Prev</a>
@@ -30,14 +34,18 @@
 
         <!-- if -->
         {% if current_page != 1 and current_page != num_pages %}
-            <a class="current-page disabled">{{ current_page }}</a>
+            <a class="current-page disabled" style="background-color: black; color: white; background: black;">{{ current_page }}</a>
         {% endif %}
 
         {% if next_page %}
             <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=next_page) }}">Next &raquo;</a>
         {% endif %}
 
-        <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=num_pages) }}" class="current-page {{'disabled' if current_page == num_pages else ''}}">{{ num_pages }}</a>
+        {% if current_page == num_pages%}
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=num_pages) }}" class="current-page {{'disabled' if current_page == num_pages else ''}}" style="color: white; background-color: black; background: black;">{{ num_pages }}</a>
+        {% else %}
+            <a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id'], page=num_pages) }}" class="current-page {{'disabled' if current_page == num_pages else ''}}">{{ num_pages }}</a>
+        {% endif %}
 
     </div>
 

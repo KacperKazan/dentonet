@@ -1,26 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
   <h2>Search Results</h2>
+  <br/>
+  Searh query: {{ search_query }}
+  <br/>
+  total results: {{ total_results }}
   <div class="container">
-    {% if results %}
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Thread</th>
-            <th>Matched Post</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for result in results %}
+    {% if all_results %}
+
+      {% for collection_name,results in all_results.items() %}
+        <!-- title -->
+        <h3>{{ collection_name }}</h3>
+        <table class="table">
+            <thead>
             <tr>
-              <td><a href="{{ url_for('thread', forum_name=result.thread.forum.link, thread_id=result.thread._id) }}">{{ result.thread.title }}</a></td>
-              <td>{{ result.post.content }}</td>
+                <th>Thread Title</th>
+                <th>Post</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+                {% for result in results %}
+                    <tr>
+                    <td><a href="{{ result['thread_link'] }}">{{ result['thread_title'] }}</a></td>
+                    <td>{{ result['html']|safe }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+      {% endfor %}
     {% else %}
       <p>No results found.</p>
     {% endif %}
+
   </div>
 {% endblock %}

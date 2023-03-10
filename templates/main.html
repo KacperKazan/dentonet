@@ -2,10 +2,29 @@
 
 {% block content %}
     <h1>Forums</h1>
-    <ul>
-        {% for collection in collections %}
-            <li><a href="{{ url_for('forum', collection_name=collection) }}">{{ collection }}</a>
-            </li>
-        {% endfor %}
-    </ul>
+    {% for section, collections in sections.items() %}
+        <h2>{{ section }}</h2>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered" style="table-layout: fixed;">
+                <colgroup>
+                    <col style="width: 50%;">
+                    <col style="width: 50%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Num Threads</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for collection in collections %}
+                        <tr>
+                            <td><a href="{{ url_for('forum', collection_name=collection['collection_name']) }}">{{ collection['collection_name'] }}</a></td>
+                            <td>{{ collection['num_threads'] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endfor %}
 {% endblock %}

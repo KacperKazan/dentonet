@@ -73,7 +73,8 @@
             {% endif %}
         {% endfor %} -->
         
-        <a href="{{ url_for('forum', collection_name=collection_name, page=topics_pagination.page) }}" class="disabled"> {{topics_pagination.page}} </a>
+        <a href="{{ url_for('forum', collection_name=collection_name, page=topics_pagination.page) }}" class="disabled" style="background-color: ba
+        ; color: white; background: black;"> {{topics_pagination.page}} </a>
 
 
         {% if topics_pagination.has_next %}
