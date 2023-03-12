@@ -4,6 +4,7 @@ import pymongo
 import math
 from flask_paginate import Pagination, get_page_parameter
 from collections import defaultdict
+import re
 
 # import ObjectId from bson.objectid
 from bson.objectid import ObjectId
@@ -66,7 +67,8 @@ def forum(collection_name):
     announcements = db[collection_name].find({'announcement': True})
 
     # topics where announcement = false
-    topics = db[collection_name].find({'announcement': False})
+    # topics should be ordered by 'date' attribute in descending order
+    topics = db[collection_name].find({'announcement': False}).sort('latest_post_datetime', pymongo.DESCENDING)
     len_topics = topics.count()
     # count number of topics
     # len_topics = 
@@ -103,7 +105,14 @@ def parse_html(html):
 def parse_and_mark_html(x, mark):
     x = parse_html(x)
     if mark and  mark in x:
-        x = x.replace(mark, f'<mark>{mark}</mark>')
+        mark_not_in_href = True
+        for href in re.findall(r'href="([^"]*)"', x):
+            if mark in href:
+                mark_not_in_href = False
+                break
+        if mark_not_in_href:
+            x = x.replace(mark, f'<mark>{mark}</mark>')
+        
 
     return x
 
@@ -115,6 +124,7 @@ def thread(collection_name, thread_id, page=1, mark=''):
     # Query the database for the selected thread object and all posts in the thread
     thread = db[collection_name].find_one({'_id': ObjectId(thread_id)})
     posts = thread['posts']
+    
 
     # Calculate the number of pages based on the number of posts and the posts per page
     num_pages = int(math.ceil(len(posts) / POSTS_PER_THREAD_PAGE))
@@ -163,9 +173,8 @@ def search():
                 # get the index of the matching post
                 for i, post in enumerate(result["posts"]):
                     if search_query in post["content"]:
-                        html = parse_html(post['html'])
                         # surround the search query with <mark> tags in html
-                        html = html.replace(search_query, f'<mark>{search_query}</mark>')
+                        html = parse_and_mark_html(post['html'], search_query)
                         
                         thread_page_index = math.ceil((i + 1) / POSTS_PER_THREAD_PAGE)
 
