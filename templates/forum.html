@@ -11,7 +11,8 @@
     <tr>
       <th scope="col">Title</th>
       <th scope="col">Author</th>
-      <th scope="col">Datetime</th>
+      <th scope="col">Latest Reply</th>
+      <th scope="col">Creation Date</th>
       <th scope="col">Replies</th>
     </tr>
   </thead>
@@ -20,6 +21,7 @@
     <tr>
       <td><a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id']) }}">{{ thread['title'] }}</a></td>
       <td>{{ thread['author']['username'] }}</td>
+      <td>{{ thread.latest_post_datetime }}</td>
       <td>{{ thread.date }}</td>
       <td>{{ thread['num_replies'] }}</td>
     </tr>
@@ -36,7 +38,8 @@
     <tr>
       <th scope="col">Title</th>
       <th scope="col">Author</th>
-      <th scope="col">Datetime</th>
+      <th scope="col">Latest Reply</th>
+      <th scope="col">Creation Date</th>
       <th scope="col">Replies</th>
     </tr>
   </thead>
@@ -45,6 +48,7 @@
     <tr>
       <td><a href="{{ url_for('thread', collection_name=collection_name, thread_id=thread['_id']) }}">{{ thread['title'] }}</a></td>
       <td>{{ thread['author']['username'] }}</td>
+      <td>{{ thread.latest_post_datetime }}</td>
       <td>{{ thread.date }}</td>
       <td>{{ thread['num_replies'] }}</td>
     </tr>
