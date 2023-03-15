@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # Connect to your MongoDB database
 client = MongoClient()
-db = client['forums']
+db = client['dentonet']
 
 collection_to_section = {
     'Dla wszystkich': 'DLA WSZYSTKICH',
