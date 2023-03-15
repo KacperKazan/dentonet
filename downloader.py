@@ -3,6 +3,7 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import os
 import time
 import re
 # %%
@@ -257,7 +258,91 @@ class Forum:
             i += 1
             if is_last_page(url):
                 keep_going = False
+# %%
+import imghdr
+def download_image(img_src, alt=None):
+    # reomve everything after &
+    img_src = img_src.split('&')[0]
+    # replace 'file.php?id=' with ''
+    save_path = img_src.replace('file.php?id=', '')
+    base_url = "https://dentonet.pl/forum-new/"
+    img_src = base_url + img_src
+    # get image type from img_src
+    
+    # Download the image file and read its contents
+    with urllib.request.urlopen(img_src) as response:
+        image_data = response.read()
 
+    # Determine the type of the image file
+    image_type = imghdr.what(None, image_data)
+    if image_type is None:
+        image_type = alt.split('.')[-1]
+
+    # write the image to a file, with image_type as extension
+    save_path += '.' + image_type
+    save_path = save_path.replace('./', 'static/')
+    # makedirs recursive at save_path
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    with open(save_path, 'wb') as f:
+        f.write(image_data)
+
+    return '/' + save_path
+# %%
+def download_file(url):
+    # <a class="postlink" href="./download/file.php?id=18188">komunikat w sprawie recept dla lekarzy.pdf</a>
+    # reomve everything after &
+    url = url.split('&')[0]
+    # replace 'file.php?id=' with ''
+    save_path = url.replace('file.php?id=', '')
+    base_url = "https://dentonet.pl/forum-new/"
+    url = base_url + url
+    try:
+        with urllib.request.urlopen(url) as response:
+            file_data = response.read()
+    except:
+        return None
+    
+
+    image_type = imghdr.what(None, file_data)
+    if image_type is not None:
+        file_type = '.' + image_type
+    else:
+        file_type = '.pdf'
+
+    save_path += file_type
+    save_path = save_path.replace('./', 'static/')
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    with open(save_path, 'wb') as f:
+        f.write(file_data)
+
+    return '/' + save_path
+# %%
+
+def replace_links(soup, new_link):
+    for a_tag in soup.find_all('a'):
+        href = a_tag.get('href')
+        if href and href.startswith('download/'):
+            a_tag['href'] = new_link + '/' + href
+
+    for img_tag in soup.find_all('img'):
+        src = img_tag.get('src')
+        if src and src.startswith('download/'):
+            img_tag['src'] = new_link + '/' + src
+    
+    return str(soup)
+
+def clean_up_attachment_links(soup):
+    for a_tag in soup.find_all('a'):
+        href = a_tag.get('href')
+        if href:
+            a_tag['href'] = href.split('&')[0]
+
+    for img_tag in soup.find_all('img'):
+        src = img_tag.get('src')
+        if src:
+            img_tag['src'] = src.split('&')[0]
+    
+    return soup
 class Post:
     def __init__(self, postcontent):
         # 'content' class and extract the text
@@ -269,6 +354,32 @@ class Post:
         else:
             content_html = ''
             content = ''
+        
+        # if 'attachbox' is postcontent, find all 'img' elements and extract the src
+        attachbox = postcontent.find('dl', {'class': 'attachbox'}) 
+        if attachbox is not None:
+            attachbox = clean_up_attachment_links(attachbox)
+            self.attachbox  = str(attachbox)
+            for dd in attachbox.find_all('dd'):
+                for img in dd.find_all('img'):
+                    img_src = img['src']
+                    img_src = img_src.split('&')[0]
+                    # define download_image function
+                    # download img and store under path given by img_src
+                    new_img_src = download_image(img_src, alt=img['alt'])
+                    img_src = img_src.split('&')[0]
+                    self.attachbox = str(self.attachbox).replace(img_src, new_img_src)
+                # d1 tag with class file
+                for dl_file in dd.find_all('dl', {'class': 'file'}):
+                    # a tag with class postlink
+                    for a_postlink in dl_file.find_all('a', {'class': 'postlink'}):
+                        href = a_postlink['href']
+                        new_href = download_file(href)
+                        if not new_href:
+                            new_href = ''
+                        self.attachbox = str(self.attachbox).replace(href, new_href)
+        else:
+            self.attachbox = ''
 
         author_p = postcontent.find('p', {'class': 'author'})
         
@@ -297,7 +408,7 @@ class Post:
             'author': self.author.__dict__(),
             'datetime': self.datetime,
             'content': self.content,
-            'html': self.html,
+            'html': self.html + self.attachbox,
         }
        
     def __str__(self):
@@ -335,7 +446,7 @@ class Thread:
         # get all 'post' class from thread.link
         # loop through each post and parse it with parse_post()
         # return list of parsed posts
-        response = request_with_retry(self.link)
+        response = request_with_retry(url)
         html_content = response.content
 
         # Use BeautifulSoup to parse the HTML content
@@ -371,6 +482,17 @@ from datetime import datetime
 # Define the URL to scrape
 url = "https://dentonet.pl/forum-new/"
 base_url = "https://dentonet.pl/forum-new/"
+
+# # %%
+# t = Thread('test', 'https://dentonet.pl/forum-new/viewtopic.php?f=13&t=21737', 'test_user', datetime.now(), 0)
+# # %%
+# posts = t.get_all_thread_posts()
+# # %%
+# for post in posts:
+#     if post.attachbox:
+#         print(post.attachbox)
+
+# %%
 # Send a request to the URL and get the HTML response
 response = request_with_retry(base_url)
 html_content = response.content
@@ -417,7 +539,7 @@ from bson.objectid import ObjectId
 from tqdm import tqdm
 
 client = MongoClient()
-db = client['forums']
+db = client['dentonet']
 # %%
 # Create a mongodb that stores all the MainSections, each MainSection has a list of Forums, each Forum has a list of annoucnement Threads and also general threads (all threads). each Thread has a list of Posts
 # each Post and Thread have an author of type User 
@@ -455,6 +577,8 @@ for main_section in main_sections:
             thread_doc = thread.__dict__()
             # Add posts list to thread object
             thread_doc['posts'] = posts_list
+            latest_datetime = posts_list[-1]['datetime']
+            thread_doc['latest_post_datetime'] = latest_datetime
             thread_doc['announcement'] = True
             thread_doc['forum'] = f_dict # this not really necessary but doesn't take up too much memory
             # insert thread_doc into collection
@@ -479,6 +603,8 @@ for main_section in main_sections:
             # Add posts list to thread object
             thread_doc['posts'] = posts_list
             thread_doc['announcement'] = False
+            latest_datetime = posts_list[-1]['datetime']
+            thread_doc['latest_post_datetime'] = latest_datetime
             thread_doc['forum'] = f_dict
             # insert thread_doc into collection
             try: 
@@ -514,7 +640,7 @@ quit()
 #     print(db[collection].find_one())
 
 # %%
-# # ## clear the whole database db
+# # clear the whole database db
 # for collection in db.list_collection_names():
 #     db.drop_collection(collection)
 # %%
