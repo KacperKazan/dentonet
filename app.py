@@ -20,13 +20,17 @@ DB_PATH = BASE_DIR / "data" / "dentonet.db"
 VEC_DB_PATH = BASE_DIR / "data" / "embeddings.db"
 CHATS_DB_PATH = BASE_DIR / "data" / "chats.db"
 
-# Load .env (never committed to git)
-_env_file = BASE_DIR / ".env"
-if _env_file.exists():
-    for _line in open(_env_file):
-        if "=" in _line and not _line.startswith("#"):
-            _k, _v = _line.strip().split("=", 1)
-            os.environ.setdefault(_k, _v)
+# Load .env from the app folder or current working directory (never committed to git)
+_ENV_PATHS = [BASE_DIR / ".env", Path.cwd() / ".env"]
+_env_loaded = False
+for _env_file in _ENV_PATHS:
+    if _env_file.exists():
+        for _line in open(_env_file):
+            if "=" in _line and not _line.startswith("#"):
+                _k, _v = _line.strip().split("=", 1)
+                os.environ.setdefault(_k, _v)
+        _env_loaded = True
+        break
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "gemini-3-flash-preview")
@@ -592,15 +596,17 @@ def api_chat():
         )
         answer_text = response.text
     except Exception as e:
-        return (
-            jsonify(
-                {
-                    "error": "Usługa Gemini jest chwilowo przeciążona "
-                    "(trwa indeksowanie archiwum). Spróbuj ponownie za minutę."
-                }
-            ),
-            503,
+        import traceback
+
+        traceback.print_exc()
+        msg = str(e)
+        is_rate_limit = "429" in msg or "RESOURCE_EXHAUSTED" in msg
+        error_text = (
+            "Usługa Gemini jest chwilowo przeciążona. Spróbuj ponownie za minutę."
+            if is_rate_limit
+            else "Wystąpił nieoczekiwany błąd podczas generowania odpowiedzi."
         )
+        return jsonify({"error": error_text}), 503 if is_rate_limit else 500
     answer_html = render_answer_html(answer_text, sources)
 
     with chats:
@@ -624,6 +630,13 @@ URL = "http://127.0.0.1:5000"
 PORT = 5000
 
 
+def _safe_print(s):
+    try:
+        print(s)
+    except UnicodeEncodeError:
+        print(s.encode("ascii", "replace").decode("ascii"))
+
+
 def instance_already_running():
     """Only one instance may run: if the port is taken, one is already up."""
     import socket
@@ -635,22 +648,24 @@ def instance_already_running():
 
 if __name__ == "__main__":
     if instance_already_running():
-        print("\n  Forum Dentonet juz dziala!")
-        print(f"  Otwieram przegladarke: {URL}\n")
+        _safe_print("\n  Forum Dentonet juz dziala!")
+        _safe_print(f"  Otwieram przegladarke: {URL}\n")
         webbrowser.open(URL)
         raise SystemExit(0)
 
     if not DB_PATH.exists():
-        print(f"\nERROR: database not found at {DB_PATH}")
-        print("The folder 'data' with 'dentonet.db' must be next to app.py.\n")
+        _safe_print(f"\nERROR: database not found at {DB_PATH}")
+        _safe_print("The folder 'data' with 'dentonet.db' must be next to app.py.\n")
         raise SystemExit(1)
 
-    print("\n" + "=" * 56)
-    print("  FORUM DENTONET jest uruchomione!")
-    print(f"  Adres strony:  {URL}")
-    print("  (Strona otworzy sie automatycznie w przegladarce.)")
-    print("  Aby zamknac forum, zamknij to okno.")
-    print("=" * 56 + "\n")
+    chat_status = "WLACZONY" if chat_available() else "WYLACZONY (brak .env lub embeddings)"
+    _safe_print("\n" + "=" * 56)
+    _safe_print("  FORUM DENTONET jest uruchomione!")
+    _safe_print(f"  Adres strony:  {URL}")
+    _safe_print("  (Strona otworzy sie automatycznie w przegladarce.)")
+    _safe_print(f"  Chat: {chat_status}")
+    _safe_print("  Aby zamknac forum, zamknij to okno.")
+    _safe_print("=" * 56 + "\n")
 
     threading.Timer(1.0, lambda: webbrowser.open(URL)).start()
     app.run(host="127.0.0.1", port=PORT)

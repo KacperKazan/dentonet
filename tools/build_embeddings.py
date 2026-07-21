@@ -24,10 +24,18 @@ ROOT = Path(__file__).resolve().parent.parent
 FORUM_DB = ROOT / "data" / "dentonet.db"
 VEC_DB = ROOT / "data" / "embeddings.db"
 
-for line in open(ROOT / ".env"):
-    if "=" in line and not line.startswith("#"):
-        k, v = line.strip().split("=", 1)
-        os.environ.setdefault(k, v)
+# Load .env from the project folder or current working directory
+_env_loaded = False
+for _env_path in [ROOT / ".env", Path.cwd() / ".env"]:
+    if _env_path.exists():
+        for line in open(_env_path):
+            if "=" in line and not line.startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ.setdefault(k, v)
+        _env_loaded = True
+        break
+if not _env_loaded:
+    print("WARNING: .env file not found — GEMINI_API_KEY must be set in environment.")
 
 from google import genai
 from google.genai import types

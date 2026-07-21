@@ -5,10 +5,17 @@ import sys
 sys.stdout.reconfigure(errors="replace")
 
 # load .env manually (no dependency)
-for line in open(os.path.join(os.path.dirname(__file__), "..", ".env")):
-    if "=" in line and not line.startswith("#"):
-        k, v = line.strip().split("=", 1)
-        os.environ.setdefault(k, v)
+_env_loaded = False
+for _env_path in [Path(__file__).resolve().parent.parent / ".env", Path.cwd() / ".env"]:
+    if _env_path.exists():
+        for line in open(_env_path):
+            if "=" in line and not line.startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ.setdefault(k, v)
+        _env_loaded = True
+        break
+if not _env_loaded:
+    print("WARNING: .env not found")
 
 from google import genai
 
