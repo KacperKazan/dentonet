@@ -68,8 +68,11 @@
     #chat-input { flex: 1; border-radius: 1.5rem; padding: 0.6rem 1.2rem; }
     #chat-form .btn { border-radius: 1.5rem; padding: 0.5rem 1.4rem; }
 
-    .conv-item { border-radius: 0.5rem !important; margin-bottom: 0.3rem; border: none !important; font-size: 0.92rem; }
+    .conv-item { border-radius: 0.5rem !important; margin-bottom: 0.3rem; border: none !important; font-size: 0.92rem; display: flex; align-items: center; justify-content: space-between; padding-right: 0.5rem; }
     .conv-item.active { background: #007bff !important; }
+    .conv-item.active .fav-btn { color: #fff; }
+    .fav-btn { border: none; background: transparent; padding: 0.15rem 0.3rem; cursor: pointer; color: #adb5bd; font-size: 1rem; line-height: 1; }
+    .fav-btn.on { color: #ffc107; }
 </style>
 
 {% if not chat_available %}
@@ -162,12 +165,28 @@ function loadConversations() {
         .then(convs => {
             document.getElementById('conversations').innerHTML = convs.map(c =>
                 `<a href="#" class="list-group-item list-group-item-action conv-item ${c.id === conversationId ? 'active' : ''}" ` +
-                `data-id="${c.id}" data-title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</a>`
+                `data-id="${c.id}" data-title="${escapeHtml(c.title)}">` +
+                `<span>${escapeHtml(c.title)}</span>` +
+                `<button class="fav-btn ${c.favorite ? 'on' : ''}" data-id="${c.id}" title="Ulubione">★</button>` +
+                `</a>`
             ).join('');
         });
 }
 
 document.getElementById('conversations').addEventListener('click', e => {
+    const btn = e.target.closest('.fav-btn');
+    if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.id);
+        const makeFav = !btn.classList.contains('on');
+        fetch(`/api/conversations/${id}/favorite`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({favorite: makeFav})
+        }).then(loadConversations);
+        return;
+    }
     const a = e.target.closest('a[data-id]');
     if (!a) return;
     e.preventDefault();

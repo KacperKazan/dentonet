@@ -298,6 +298,7 @@ def get_chatsdb():
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT,
+                favorite INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
             CREATE TABLE IF NOT EXISTS messages (
@@ -310,6 +311,10 @@ def get_chatsdb():
             );
             """
         )
+        # migrate old dbs that are missing the favorite column
+        cols = [c[1] for c in g.chatsdb.execute("PRAGMA table_info(conversations)")]
+        if "favorite" not in cols:
+            g.chatsdb.execute("ALTER TABLE conversations ADD COLUMN favorite INTEGER DEFAULT 0")
     return g.chatsdb
 
 
@@ -486,7 +491,8 @@ def embeddings_status():
 @app.route("/api/conversations")
 def list_conversations():
     rows = get_chatsdb().execute(
-        "SELECT id, title, created_at FROM conversations ORDER BY id DESC"
+        "SELECT id, title, favorite, created_at FROM conversations "
+        "ORDER BY favorite DESC, id DESC"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
 
@@ -509,6 +515,18 @@ def get_conversation(conv_id):
             }
         )
     return jsonify(out)
+
+
+@app.route("/api/conversations/<int:conv_id>/favorite", methods=["POST"])
+def favorite_conversation(conv_id):
+    fav = request.get_json(force=True).get("favorite", False)
+    chats = get_chatsdb()
+    with chats:
+        chats.execute(
+            "UPDATE conversations SET favorite = ? WHERE id = ?", (1 if fav else 0, conv_id)
+        )
+    chats.commit()
+    return jsonify({"ok": True, "favorite": bool(fav)})
 
 
 @app.route("/api/conversations/<int:conv_id>/title", methods=["POST"])
