@@ -85,6 +85,7 @@
     <aside id="chat-sidebar">
         <button id="new-chat-btn" class="btn btn-primary btn-block mb-3">+ Nowa rozmowa</button>
         <h6 class="text-muted text-uppercase" style="font-size:.75rem; letter-spacing:.05em;">Historia rozmów</h6>
+        <input id="conv-search" class="form-control form-control-sm mb-2" type="text" placeholder="Szukaj rozmowy…">
         <div id="conversations" class="list-group"></div>
     </aside>
 
@@ -159,10 +160,22 @@ function addError(text) {
 
 function setTitle(t) { titleEl.textContent = t || 'Nowa rozmowa'; }
 
+let allConvs = [];
+
+function filterConversations() {
+    const q = document.getElementById('conv-search').value.trim().toLowerCase();
+    const list = document.getElementById('conversations');
+    list.querySelectorAll('a[data-id]').forEach(a => {
+        const title = a.dataset.title.toLowerCase();
+        a.style.display = (!q || title.includes(q)) ? '' : 'none';
+    });
+}
+
 function loadConversations() {
     fetch('/api/conversations')
         .then(r => r.json())
         .then(convs => {
+            allConvs = convs;
             document.getElementById('conversations').innerHTML = convs.map(c =>
                 `<a href="#" class="list-group-item list-group-item-action conv-item ${c.id === conversationId ? 'active' : ''}" ` +
                 `data-id="${c.id}" data-title="${escapeHtml(c.title)}">` +
@@ -170,8 +183,11 @@ function loadConversations() {
                 `<button class="fav-btn ${c.favorite ? 'on' : ''}" data-id="${c.id}" title="Ulubione">★</button>` +
                 `</a>`
             ).join('');
+            filterConversations();
         });
 }
+
+document.getElementById('conv-search').addEventListener('input', filterConversations);
 
 document.getElementById('conversations').addEventListener('click', e => {
     const btn = e.target.closest('.fav-btn');
