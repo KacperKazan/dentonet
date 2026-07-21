@@ -47,6 +47,15 @@ WAZNE
 - Folder mozesz przenosic/kopiowac w dowolne
   miejsce - forum bedzie dzialac wszedzie.
 
+- Przegladanie forum dziala BEZ internetu.
+  Funkcja CHAT wymaga polaczenia z internetem
+  (odpowiedzi generuje Google Gemini).
+
+- Jesli forum jest juz uruchomione, a klikniesz
+  plik startowy ponownie - nic sie nie stanie,
+  po prostu otworzy sie strona w przegladarce.
+  Zawsze dziala tylko JEDNA kopia forum.
+
 
 PROBLEMY?
 ---------

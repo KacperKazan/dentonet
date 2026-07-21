@@ -10,6 +10,9 @@ static/dentonet_files_download.zip
 __pycache__/
 *.pyc
 
+# Secrets — never commit
+.env
+
 # OS
 .DS_Store
 Thumbs.db

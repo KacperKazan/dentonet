@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Chat z archiwum forum</h2>
+
+{% if not chat_available %}
+<div class="alert alert-warning">
+    Chat nie jest jeszcze gotowy (brak klucza API w pliku <code>.env</code> lub bazy embeddings).
+</div>
+{% endif %}
+
+<div class="row" style="height: 70vh;">
+    <!-- Sidebar: conversations -->
+    <div class="col-md-3" style="height: 100%; overflow-y: auto;">
+        <button id="new-chat-btn" class="btn btn-primary btn-block mb-2">Nowa rozmowa</button>
+        <div id="conversations" class="list-group"></div>
+    </div>
+
+    <!-- Chat pane -->
+    <div class="col-md-9 d-flex flex-column" style="height: 100%;">
+        <div id="messages" class="border rounded p-3 mb-2 flex-grow-1" style="overflow-y: auto; background: #fafafa;">
+            <p class="text-muted">Zadaj pytanie — odpowiedzi powstają na podstawie postów z archiwum forum, z linkami do źródeł.</p>
+        </div>
+        <form id="chat-form" class="form-inline">
+            <input id="chat-input" class="form-control flex-grow-1 mr-2" type="text"
+                   placeholder="Np. jaki cement pod koronę na implancie?" autocomplete="off" required>
+            <button type="submit" class="btn btn-success">Wyślij</button>
+        </form>
+    </div>
+</div>
+
+<script>
+let conversationId = null;
+
+const messagesEl = document.getElementById('messages');
+const form = document.getElementById('chat-form');
+const input = document.getElementById('chat-input');
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function addUserMessage(text) {
+    messagesEl.insertAdjacentHTML('beforeend',
+        `<div class="card mb-2 border-secondary"><div class="card-body py-2"><strong>Ty:</strong> ${escapeHtml(text)}</div></div>`);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addAssistantMessage(html, sources) {
+    let sourcesHtml = '';
+    if (sources && sources.length) {
+        sourcesHtml = '<hr><small><strong>Źródła:</strong><ol class="mb-0">' +
+            sources.map(s =>
+                `<li><a href="${s.url}" target="_blank">${escapeHtml(s.title)}</a> ` +
+                `<span class="text-muted">(${escapeHtml(s.author)}, ${escapeHtml(s.date)})</span></li>`
+            ).join('') + '</ol></small>';
+    }
+    messagesEl.insertAdjacentHTML('beforeend',
+        `<div class="card mb-2 border-primary"><div class="card-body py-2">${html}${sourcesHtml}</div></div>`);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addError(text) {
+    messagesEl.insertAdjacentHTML('beforeend',
+        `<div class="alert alert-danger py-2">${escapeHtml(text)}</div>`);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function loadConversations() {
+    fetch('/api/conversations')
+        .then(r => r.json())
+        .then(convs => {
+            document.getElementById('conversations').innerHTML = convs.map(c =>
+                `<a href="#" class="list-group-item list-group-item-action ${c.id === conversationId ? 'active' : ''}" ` +
+                `data-id="${c.id}">${escapeHtml(c.title)}</a>`
+            ).join('');
+        });
+}
+
+document.getElementById('conversations').addEventListener('click', e => {
+    const a = e.target.closest('a[data-id]');
+    if (!a) return;
+    e.preventDefault();
+    conversationId = parseInt(a.dataset.id);
+    messagesEl.innerHTML = '';
+    fetch(`/api/conversations/${conversationId}`)
+        .then(r => r.json())
+        .then(msgs => {
+            for (const m of msgs) {
+                if (m.role === 'user') addUserMessage(m.content);
+                else addAssistantMessage(m.content, m.sources);
+            }
+            loadConversations();
+        });
+});
+
+document.getElementById('new-chat-btn').addEventListener('click', () => {
+    conversationId = null;
+    messagesEl.innerHTML = '<p class="text-muted">Nowa rozmowa. Zadaj pytanie poniżej.</p>';
+    loadConversations();
+    input.focus();
+});
+
+form.addEventListener('submit', e => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    addUserMessage(text);
+    const thinking = document.createElement('div');
+    thinking.className = 'text-muted mb-2';
+    thinking.textContent = 'Szukam w archiwum i piszę odpowiedź…';
+    messagesEl.appendChild(thinking);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text, conversation_id: conversationId})
+    })
+        .then(r => r.json().then(body => ({ok: r.ok, body})))
+        .then(({ok, body}) => {
+            thinking.remove();
+            if (!ok) { addError(body.error || 'Wystąpił błąd.'); return; }
+            conversationId = body.conversation_id;
+            addAssistantMessage(body.answer_html, body.sources);
+            loadConversations();
+        })
+        .catch(() => { thinking.remove(); addError('Błąd połączenia.'); });
+});
+
+loadConversations();
+input.focus();
+</script>
+{% endblock %}

@@ -1,4 +1,7 @@
+import html as html_mod
+import json
 import math
+import os
 import re
 import sqlite3
 import threading
@@ -6,13 +9,30 @@ import webbrowser
 from collections import defaultdict
 from pathlib import Path
 
-from flask import Flask, g, render_template, request, url_for
+from flask import Flask, g, jsonify, render_template, request, url_for
 from flask_paginate import Pagination, get_page_parameter
 
 THREADS_PER_FORUM_PAGE = 50
 POSTS_PER_THREAD_PAGE = 10
 
-DB_PATH = Path(__file__).resolve().parent / "data" / "dentonet.db"
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "data" / "dentonet.db"
+VEC_DB_PATH = BASE_DIR / "data" / "embeddings.db"
+CHATS_DB_PATH = BASE_DIR / "data" / "chats.db"
+
+# Load .env (never committed to git)
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    for _line in open(_env_file):
+        if "=" in _line and not _line.startswith("#"):
+            _k, _v = _line.strip().split("=", 1)
+            os.environ.setdefault(_k, _v)
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "gemini-3-flash-preview")
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "gemini-embedding-001")
+EMBED_DIMS = 768
+TOP_K = 8  # posts retrieved per question
 
 app = Flask(__name__)
 
@@ -242,9 +262,289 @@ def search():
     )
 
 
+# ---------------------------------------------------------------------------
+# Chat (RAG over the forum archive)
+# ---------------------------------------------------------------------------
+
+_genai_client = None
+
+
+def get_genai():
+    global _genai_client
+    if _genai_client is None:
+        from google import genai
+
+        _genai_client = genai.Client(api_key=GEMINI_API_KEY)
+    return _genai_client
+
+
+def get_vecdb():
+    if "vecdb" not in g:
+        import sqlite_vec
+
+        g.vecdb = sqlite3.connect(VEC_DB_PATH)
+        g.vecdb.enable_load_extension(True)
+        sqlite_vec.load(g.vecdb)
+    return g.vecdb
+
+
+def get_chatsdb():
+    if "chatsdb" not in g:
+        g.chatsdb = sqlite3.connect(CHATS_DB_PATH)
+        g.chatsdb.row_factory = sqlite3.Row
+        g.chatsdb.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sources_json TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            );
+            """
+        )
+    return g.chatsdb
+
+
+@app.teardown_appcontext
+def close_extra_dbs(exception):
+    for key in ("vecdb", "chatsdb"):
+        db = g.pop(key, None)
+        if db is not None:
+            db.close()
+
+
+def chat_available():
+    return bool(GEMINI_API_KEY) and VEC_DB_PATH.exists()
+
+
+def embed_query(text):
+    from google.genai import types
+
+    r = get_genai().models.embed_content(
+        model=EMBED_MODEL,
+        contents=text,
+        config=types.EmbedContentConfig(
+            output_dimensionality=EMBED_DIMS, task_type="RETRIEVAL_QUERY"
+        ),
+    )
+    return r.embeddings[0].values
+
+
+def retrieve_posts(query, k=TOP_K):
+    """KNN search over post embeddings; returns source dicts with URLs."""
+    import sqlite_vec
+
+    vec = embed_query(query)
+    rows = get_vecdb().execute(
+        "SELECT rowid, distance FROM vec_posts WHERE embedding MATCH ? AND k = ?",
+        (sqlite_vec.serialize_float32(vec), k),
+    ).fetchall()
+
+    db = get_db()
+    sources = []
+    for i, (post_rowid, distance) in enumerate(rows, start=1):
+        p = db.execute(
+            "SELECT p.thread_id, p.idx, p.author, p.datetime, p.content, "
+            "t.collection, t.title FROM posts p "
+            "JOIN threads t ON t.id = p.thread_id WHERE p.rowid = ?",
+            (post_rowid,),
+        ).fetchone()
+        if p is None:
+            continue
+        page = math.ceil((p["idx"] + 1) / POSTS_PER_THREAD_PAGE)
+        url_kwargs = dict(
+            collection_name=p["collection"], thread_id=p["thread_id"], page=page
+        )
+        if query and query in p["content"]:
+            url_kwargs["mark"] = query
+        sources.append(
+            {
+                "n": i,
+                "title": p["title"],
+                "author": p["author"],
+                "date": p["datetime"],
+                "content": p["content"][:2000],
+                "url": url_for("thread", **url_kwargs),
+            }
+        )
+    return sources
+
+
+SYSTEM_PROMPT = """Jesteś asystentem archiwum polskiego forum dentystycznego DENTOnet.
+Odpowiadasz po polsku, WYŁĄCZNIE na podstawie dostarczonych postów z forum.
+
+Zasady:
+- Po każdym twierdzeniu zaczerpniętym z postu podaj numer źródła w nawiasie kwadratowym, np. [1] albo [2][3].
+- Jeśli posty nie zawierają odpowiedzi na pytanie, powiedz to wprost.
+- Nie wymieniaj źródeł na końcu — linki dodaje system.
+- Pisz zwięźle i konkretnie. Możesz używać **pogrubień**.
+- Zaznacz, że odpowiedzi pochodzą z archiwum forum (opinie użytkowników), a nie stanowią porady medycznej."""
+
+
+def build_chat_contents(history, question, sources):
+    posts_block = "\n\n".join(
+        f"[{s['n']}] (wątek: „{s['title']}”, autor: {s['author']}, {s['date']})\n{s['content']}"
+        for s in sources
+    )
+    contents = [
+        {"role": m["role"], "parts": [{"text": m["content"]}]} for m in history
+    ]
+    contents.append(
+        {
+            "role": "user",
+            "parts": [
+                {"text": f"Pytanie: {question}\n\nPosty z forum:\n{posts_block}"}
+            ],
+        }
+    )
+    return contents
+
+
+def render_answer_html(text, sources):
+    """Escape the model output, then turn [n] markers into source links."""
+    by_n = {s["n"]: s for s in sources}
+    escaped = html_mod.escape(text)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+    def replace_marker(match):
+        nums = [int(x) for x in re.findall(r"\d+", match.group(0))]
+        valid = [n for n in nums if n in by_n]
+        if not valid:
+            return ""
+        return "".join(
+            f'<a href="{by_n[n]["url"]}" target="_blank" '
+            f'title="{html_mod.escape(by_n[n]["title"])}">[{n}]</a>'
+            for n in valid
+        )
+
+    escaped = re.sub(r"\[[\d,\s]+\]", replace_marker, escaped)
+    return escaped.replace("\n", "<br>")
+
+
+@app.route("/chat")
+def chat():
+    return render_template("chat.html", chat_available=chat_available())
+
+
+@app.route("/api/conversations")
+def list_conversations():
+    rows = get_chatsdb().execute(
+        "SELECT id, title, created_at FROM conversations ORDER BY id DESC"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/conversations/<int:conv_id>")
+def get_conversation(conv_id):
+    rows = get_chatsdb().execute(
+        "SELECT role, content, sources_json, created_at FROM messages "
+        "WHERE conversation_id = ? ORDER BY id",
+        (conv_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "role": r["role"],
+                "content": r["content"],
+                "sources": json.loads(r["sources_json"] or "[]"),
+                "created_at": r["created_at"],
+            }
+        )
+    return jsonify(out)
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    if not chat_available():
+        return (
+            jsonify(
+                {
+                    "error": "Chat nie jest jeszcze gotowy (brak klucza API lub bazy embeddings)."
+                }
+            ),
+            503,
+        )
+
+    data = request.get_json(force=True)
+    question = (data.get("message") or "").strip()
+    conv_id = data.get("conversation_id")
+    if not question:
+        return jsonify({"error": "Puste pytanie."}), 400
+
+    chats = get_chatsdb()
+
+    if conv_id:
+        history = chats.execute(
+            "SELECT role, content FROM messages WHERE conversation_id = ? "
+            "ORDER BY id DESC LIMIT 8",
+            (conv_id,),
+        ).fetchall()
+        history = list(reversed(history))
+    else:
+        history = []
+        cur = chats.execute(
+            "INSERT INTO conversations (title) VALUES (?)", (question[:80],)
+        )
+        conv_id = cur.lastrowid
+
+    sources = retrieve_posts(question)
+    contents = build_chat_contents(history, question, sources)
+
+    from google.genai import types
+
+    response = get_genai().models.generate_content(
+        model=CHAT_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+    )
+    answer_text = response.text
+    answer_html = render_answer_html(answer_text, sources)
+
+    with chats:
+        chats.execute(
+            "INSERT INTO messages (conversation_id, role, content) VALUES (?, 'user', ?)",
+            (conv_id, question),
+        )
+        chats.execute(
+            "INSERT INTO messages (conversation_id, role, content, sources_json) "
+            "VALUES (?, 'model', ?, ?)",
+            (conv_id, answer_html, json.dumps(sources, ensure_ascii=False)),
+        )
+    chats.commit()
+
+    return jsonify(
+        {"conversation_id": conv_id, "answer_html": answer_html, "sources": sources}
+    )
+
+
 URL = "http://127.0.0.1:5000"
+PORT = 5000
+
+
+def instance_already_running():
+    """Only one instance may run: if the port is taken, one is already up."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex(("127.0.0.1", PORT)) == 0
+
 
 if __name__ == "__main__":
+    if instance_already_running():
+        print("\n  Forum Dentonet juz dziala!")
+        print(f"  Otwieram przegladarke: {URL}\n")
+        webbrowser.open(URL)
+        raise SystemExit(0)
+
     if not DB_PATH.exists():
         print(f"\nERROR: database not found at {DB_PATH}")
         print("The folder 'data' with 'dentonet.db' must be next to app.py.\n")
@@ -258,4 +558,4 @@ if __name__ == "__main__":
     print("=" * 56 + "\n")
 
     threading.Timer(1.0, lambda: webbrowser.open(URL)).start()
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host="127.0.0.1", port=PORT)
