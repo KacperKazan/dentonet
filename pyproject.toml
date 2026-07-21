@@ -1,0 +1,12 @@
+[project]
+name = "dentonet"
+version = "1.0.0"
+description = "Offline archive of the DENTOnet dental forum"
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.0",
+    "flask-paginate>=2024.2.8",
+]
+
+[tool.uv]
+package = false

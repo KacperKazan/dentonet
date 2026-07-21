@@ -1,191 +1,261 @@
-from flask import Flask, render_template, request, url_for
-from pymongo import MongoClient
-import pymongo
 import math
-from flask_paginate import Pagination, get_page_parameter
-from collections import defaultdict
 import re
+import sqlite3
+import threading
+import webbrowser
+from collections import defaultdict
+from pathlib import Path
 
-# import ObjectId from bson.objectid
-from bson.objectid import ObjectId
+from flask import Flask, g, render_template, request, url_for
+from flask_paginate import Pagination, get_page_parameter
 
-# Initialize pagination
 THREADS_PER_FORUM_PAGE = 50
 POSTS_PER_THREAD_PAGE = 10
 
+DB_PATH = Path(__file__).resolve().parent / "data" / "dentonet.db"
 
 app = Flask(__name__)
 
-# Connect to your MongoDB database
-client = MongoClient()
-db = client['dentonet']
 
-collection_to_section = {
-    'Dla wszystkich': 'DLA WSZYSTKICH',
-    'Pomoc techniczna': 'DLA WSZYSTKICH',
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
-    'Forum ogólnostomatologiczne': 'DLA DENTYSTÓW',
-    'Forum specjalistyczne': 'DLA DENTYSTÓW',
-    'Sprzęt i materiały': 'DLA DENTYSTÓW',
-    'Z praktyki wzięte  przypadki': 'DLA DENTYSTÓW',
-    'NFZ': 'DLA DENTYSTÓW',
-    'Ankiety': 'DLA DENTYSTÓW',
-    'Po godzinach': 'DLA DENTYSTÓW',
-    
-    'Forum specjalistyczne': 'DLA TECHNIKÓW DENTYSTYCZNYCH',
-    'Po godzinach': 'DLA TECHNIKÓW DENTYSTYCZNYCH',
-    
-    'Dla asystentek i higienistek': 'DLA ASYSTENTEK',
-    
-    'Dla studentów': 'DLA STUDENTÓW',
 
-    'Sprawy forum': 'DLA MODERATORÓW',
-}
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
-# Define the routes for your website
-@app.route('/')
+
+def row_to_thread(row):
+    """Shape a threads-table row like the old MongoDB document (for templates)."""
+    return {
+        "_id": row["id"],
+        "title": row["title"],
+        "author": {"username": row["author"]},
+        "date": row["date"],
+        "latest_post_datetime": row["latest_post_datetime"],
+        "num_replies": row["num_replies"],
+    }
+
+
+@app.route("/")
 def main():
-    # Query the database for all collection names
-    collections = db.list_collection_names()
-    # dict with default value of []
+    db = get_db()
+    rows = db.execute(
+        "SELECT collection, section, COUNT(*) AS n FROM threads "
+        "GROUP BY collection ORDER BY section, collection"
+    ).fetchall()
     sections = defaultdict(list)
-    for collection in collections:
-        # find one thread
-        threads = db[collection].find({})
-        section = collection_to_section[collection]
-        dict = {'collection_name': collection, 'num_threads': threads.count()}
-        sections[section].append(dict)
+    for row in rows:
+        sections[row["section"]].append(
+            {"collection_name": row["collection"], "num_threads": row["n"]}
+        )
+    return render_template("main.html", sections=sections)
 
-    # Render the main.html template with the collection names
-    return render_template('main.html', sections=sections)
 
-@app.route('/forum/<collection_name>')
+@app.route("/forum/<collection_name>")
 def forum(collection_name):
-    # Query the database for all thread objects in the selected collection
+    db = get_db()
 
-    # Separate out the announcement threads from the regular topics
-    announcements = db[collection_name].find({'announcement': True})
+    announcements = [
+        row_to_thread(r)
+        for r in db.execute(
+            "SELECT * FROM threads WHERE collection = ? AND announcement = 1",
+            (collection_name,),
+        )
+    ]
 
-    # topics where announcement = false
-    # topics should be ordered by 'date' attribute in descending order
-    topics = db[collection_name].find({'announcement': False}).sort('latest_post_datetime', pymongo.DESCENDING)
-    len_topics = topics.count()
-    # count number of topics
-    # len_topics = 
-    # for thread in threads:
-    #     if thread['announcement']:
-    #         announcements.append(thread)
-    #     else:
-    #         topics.append(thread)
+    len_topics = db.execute(
+        "SELECT COUNT(*) FROM threads WHERE collection = ? AND announcement = 0",
+        (collection_name,),
+    ).fetchone()[0]
 
-    # Paginate the topics
     page = request.args.get(get_page_parameter(), type=int, default=1)
-    topics_pagination = Pagination(page=page, per_page=THREADS_PER_FORUM_PAGE, total=len_topics, css_framework='bootstrap4')
-    # get next page number
+    topics_pagination = Pagination(
+        page=page,
+        per_page=THREADS_PER_FORUM_PAGE,
+        total=len_topics,
+        css_framework="bootstrap4",
+    )
 
     total_pages = math.ceil(len_topics / THREADS_PER_FORUM_PAGE)
     next_page = min(page + 1, total_pages)
     prev_page = max(page - 1, 1)
 
-    # Get the current page of topics
-    start = (page - 1) * THREADS_PER_FORUM_PAGE
-    end = start + THREADS_PER_FORUM_PAGE
-    topics_page = topics[start:end]
+    topics_page = [
+        row_to_thread(r)
+        for r in db.execute(
+            "SELECT * FROM threads WHERE collection = ? AND announcement = 0 "
+            "ORDER BY latest_post_datetime DESC LIMIT ? OFFSET ?",
+            (collection_name, THREADS_PER_FORUM_PAGE, (page - 1) * THREADS_PER_FORUM_PAGE),
+        )
+    ]
 
-    # Render the forum.html template with the thread objects
-    return render_template('forum.html', collection_name=collection_name, announcements=announcements, topics=topics_page, topics_pagination=topics_pagination, num_pages=total_pages, next_page=next_page, prev_page=prev_page)
+    return render_template(
+        "forum.html",
+        collection_name=collection_name,
+        announcements=announcements,
+        topics=topics_page,
+        topics_pagination=topics_pagination,
+        num_pages=total_pages,
+        next_page=next_page,
+        prev_page=prev_page,
+    )
+
 
 def parse_html(html):
-    # replace &lt; with <
-    html =  html.replace('&lt;', '<')
-    # replace &gt; with >
-    html =  html.replace('&gt;', '>')
+    html = html.replace("&lt;", "<")
+    html = html.replace("&gt;", ">")
     return html
+
 
 def parse_and_mark_html(x, mark):
     x = parse_html(x)
-    if mark and  mark in x:
+    if mark and mark in x:
         mark_not_in_href = True
         for href in re.findall(r'href="([^"]*)"', x):
             if mark in href:
                 mark_not_in_href = False
                 break
         if mark_not_in_href:
-            x = x.replace(mark, f'<mark>{mark}</mark>')
-        
-
+            x = x.replace(mark, f"<mark>{mark}</mark>")
     return x
 
 
-@app.route('/thread/<collection_name>/<thread_id>')
-@app.route('/thread/<collection_name>/<thread_id>/<int:page>')
-@app.route('/thread/<collection_name>/<thread_id>/<int:page>/<mark>')
-def thread(collection_name, thread_id, page=1, mark=''):
-    # Query the database for the selected thread object and all posts in the thread
-    thread = db[collection_name].find_one({'_id': ObjectId(thread_id)})
-    posts = thread['posts']
-    
+@app.route("/thread/<collection_name>/<thread_id>")
+@app.route("/thread/<collection_name>/<thread_id>/<int:page>")
+@app.route("/thread/<collection_name>/<thread_id>/<int:page>/<mark>")
+def thread(collection_name, thread_id, page=1, mark=""):
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM threads WHERE collection = ? AND id = ?",
+        (collection_name, thread_id),
+    ).fetchone()
+    if row is None:
+        return "Thread not found", 404
 
-    # Calculate the number of pages based on the number of posts and the posts per page
-    num_pages = int(math.ceil(len(posts) / POSTS_PER_THREAD_PAGE))
+    thread = row_to_thread(row)
 
-    # Paginate the posts based on the current page
+    all_posts = db.execute(
+        "SELECT * FROM posts WHERE thread_id = ? ORDER BY idx", (thread_id,)
+    ).fetchall()
+
+    num_pages = int(math.ceil(len(all_posts) / POSTS_PER_THREAD_PAGE))
+
     start_idx = (page - 1) * POSTS_PER_THREAD_PAGE
     end_idx = start_idx + POSTS_PER_THREAD_PAGE
-    paginated_posts = posts[start_idx:end_idx]
+    paginated_posts = [
+        {
+            "author": {"username": p["author"]},
+            "datetime": p["datetime"],
+            "content": p["content"],
+            "html": p["html"],
+        }
+        for p in all_posts[start_idx:end_idx]
+    ]
 
-    # Generate the pagination links
     prev_page = page - 1 if page > 1 else None
     next_page = page + 1 if page < num_pages else None
     pages = []
-
     for i in range(1, num_pages + 1):
         if i == page:
-            pages.append({'num': i, 'url': None})
+            pages.append({"num": i, "url": None})
         else:
-            pages.append({'num': i, 'url': url_for('thread', collection_name=collection_name, thread_id=thread_id, page=i)})
+            pages.append(
+                {
+                    "num": i,
+                    "url": url_for(
+                        "thread",
+                        collection_name=collection_name,
+                        thread_id=thread_id,
+                        page=i,
+                    ),
+                }
+            )
+
+    return render_template(
+        "thread.html",
+        collection_name=collection_name,
+        thread=thread,
+        posts=paginated_posts,
+        prev_page=prev_page,
+        next_page=next_page,
+        pages=pages,
+        num_pages=num_pages,
+        current_page=page,
+        parse_html=parse_and_mark_html,
+        mark=mark,
+    )
 
 
-    # Render the thread.html template with the thread object, posts, and pagination variables
-    return render_template('thread.html', collection_name=collection_name, thread=thread, posts=paginated_posts, prev_page=prev_page, next_page=next_page, pages=pages, num_pages=num_pages, current_page=page, parse_html=parse_and_mark_html, mark=mark)
+def like_escape(query):
+    """Escape LIKE wildcards so the query is treated as a literal substring."""
+    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-@app.route('/search', methods=['GET', 'POST'])
+
+@app.route("/search", methods=["GET", "POST"])
 def search():
-    # Get the search query from the form
-    # search_query = request.form['search_query']
-    search_query = str(request.args.get('search_query'))
+    search_query = str(request.args.get("search_query"))
+    db = get_db()
 
-    unique_threads = set()
-    #  dictionary with default value of []
     all_results = defaultdict(list)
-    # loop through all collections in the database
-    for collection_name in db.list_collection_names():
-        # get the collection
-        collection = db[collection_name]
-        # search for the text in the posts content attribute
-        results = collection.find({"posts.content": {"$regex": search_query}})
-        # iterate over the results
-        for result in results:
-            # check if the result is already in the set
-            if result['_id'] not in unique_threads:
-                # if not, add it to the set
-                unique_threads.add(result['_id'])
-                # get the index of the matching post
-                for i, post in enumerate(result["posts"]):
-                    if search_query in post["content"]:
-                        # surround the search query with <mark> tags in html
-                        html = parse_and_mark_html(post['html'], search_query)
-                        
-                        thread_page_index = math.ceil((i + 1) / POSTS_PER_THREAD_PAGE)
 
-                        thread_page_link = url_for('thread', collection_name=collection_name, thread_id=result['_id'], page=thread_page_index, mark=search_query)
+    rows = db.execute(
+        "SELECT p.thread_id, p.idx, p.content, p.html, t.collection, t.title "
+        "FROM posts p JOIN threads t ON t.id = p.thread_id "
+        "WHERE p.content LIKE ? ESCAPE '\\'",
+        (f"%{like_escape(search_query)}%",),
+    )
 
-                        search_result = {'thread_id': result['_id'], 'thread_title': result['title'], 'html': html, 'thread_link': thread_page_link}
-                        all_results[collection_name].append(search_result)
+    for row in rows:
+        if search_query not in row["content"]:
+            continue
 
-    # Render the search.html template with the search results
+        html = parse_and_mark_html(row["html"], search_query)
+        thread_page_index = math.ceil((row["idx"] + 1) / POSTS_PER_THREAD_PAGE)
+        thread_page_link = url_for(
+            "thread",
+            collection_name=row["collection"],
+            thread_id=row["thread_id"],
+            page=thread_page_index,
+            mark=search_query,
+        )
+        search_result = {
+            "thread_id": row["thread_id"],
+            "thread_title": row["title"],
+            "html": html,
+            "thread_link": thread_page_link,
+        }
+        all_results[row["collection"]].append(search_result)
+
     total_results = sum(len(results) for results in all_results.values())
-    return render_template('search.html', search_query=search_query, all_results=all_results, total_results=total_results)
+    return render_template(
+        "search.html",
+        search_query=search_query,
+        all_results=all_results,
+        total_results=total_results,
+    )
 
-if __name__ == '__main__':
-    app.run(debug=True)
+
+URL = "http://127.0.0.1:5000"
+
+if __name__ == "__main__":
+    if not DB_PATH.exists():
+        print(f"\nERROR: database not found at {DB_PATH}")
+        print("The folder 'data' with 'dentonet.db' must be next to app.py.\n")
+        raise SystemExit(1)
+
+    print("\n" + "=" * 56)
+    print("  FORUM DENTONET jest uruchomione!")
+    print(f"  Adres strony:  {URL}")
+    print("  (Strona otworzy sie automatycznie w przegladarce.)")
+    print("  Aby zamknac forum, zamknij to okno.")
+    print("=" * 56 + "\n")
+
+    threading.Timer(1.0, lambda: webbrowser.open(URL)).start()
+    app.run(host="127.0.0.1", port=5000)

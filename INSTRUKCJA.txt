@@ -1,0 +1,69 @@
+====================================================
+  FORUM DENTONET - INSTRUKCJA
+====================================================
+
+TO JEST ARCHIWUM FORUM DENTONET - dziala w pelni
+offline, bez internetu (internet jest potrzebny
+TYLKO przy pierwszym uruchomieniu na nowym
+komputerze, aby pobrac Pythona - ok. 30 MB).
+
+
+JAK URUCHOMIC FORUM
+-------------------
+
+1. Skopiuj CALY ten folder z dysku zewnetrznego
+   na komputer (np. na Pulpit).
+
+2. Kliknij DWA RAZY odpowiedni plik:
+
+   - Windows:  "Start Dentonet (Windows).bat"
+   - Mac:      "Start Dentonet (Mac).command"
+
+3. Poczekaj chwile. Przy PIERWSZYM uruchomieniu
+   program sam zainstaluje potrzebne narzedzia
+   (trwa to 1-2 minuty, wymaga internetu).
+   Przy kolejnych uruchomieniach forum wlacza
+   sie od razu.
+
+4. Forum otworzy sie automatycznie w przegladarce.
+
+   Adres strony (jesli chcesz otworzyc ja ponownie):
+
+        http://127.0.0.1:5000
+
+   Warto dodac ten adres do zakladek w przegladarce!
+
+5. Aby WYLACZYC forum - po prostu zamknij czarne
+   okienko, ktore sie otworzylo.
+
+
+WAZNE
+-----
+
+- NIE kasuj i NIE przenos zadnych plikow wewnatrz
+  tego folderu. Folder musi zostac w calosci,
+  tak jak jest.
+
+- Folder mozesz przenosic/kopiowac w dowolne
+  miejsce - forum bedzie dzialac wszedzie.
+
+
+PROBLEMY?
+---------
+
+Windows: jesli system pyta czy uruchomic plik,
+wybierz "Wiecej informacji" -> "Uruchom mimo to".
+
+Mac: jesli dwuklik nie dziala:
+  a) kliknij plik PRAWYM przyciskiem myszy
+     i wybierz "Otworz", potwierdz "Otworz".
+  b) jesli nadal nie dziala: otworz program
+     "Terminal", wpisz:
+
+       chmod +x
+
+     po czym PRZECIAGNIJ plik "Start Dentonet
+     (Mac).command" do okna Terminala i nacisnij
+     Enter. Potem dwuklik bedzie juz dzialal.
+
+Kontakt techniczny: (tu wpisz dane opiekuna)

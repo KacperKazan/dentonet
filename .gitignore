@@ -1,4 +1,15 @@
-mongodb
-static/download
+# Local data (kept only on the backup drive, not in git)
+data/
+static/download/
+mongodb/
+database_export/
 static/dentonet_files_download.zip
-database_export
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
