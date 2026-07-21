@@ -1,31 +1,115 @@
 {% extends "base.html" %}
+{% block container_class %}p-0 m-0 w-100{% endblock %}
 {% block content %}
-<h2>Chat z archiwum forum</h2>
+<style>
+    /* Full-height split layout: fixed sidebar left, page-scrolling chat right */
+    .chat-layout { display: flex; align-items: flex-start; }
+
+    #chat-sidebar {
+        position: fixed;
+        top: 56px;            /* below navbar */
+        left: 0;
+        bottom: 0;
+        width: 300px;
+        overflow-y: auto;
+        background: #f4f6f8;
+        border-right: 1px solid #dee2e6;
+        padding: 1rem;
+        z-index: 100;
+    }
+    #chat-main { margin-left: 300px; width: calc(100% - 300px); min-height: calc(100vh - 56px); background: #fff; }
+
+    #chat-header {
+        position: sticky;
+        top: 0;
+        z-index: 90;
+        background: #fff;
+        border-bottom: 1px solid #dee2e6;
+        padding: 0.9rem 2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+    #chat-title { margin: 0; font-size: 1.25rem; font-weight: 600; }
+    #edit-title-btn { border: none; background: none; color: #6c757d; cursor: pointer; font-size: 1rem; padding: 0.2rem 0.4rem; }
+    #edit-title-btn:hover { color: #007bff; }
+    #title-input { font-size: 1.1rem; max-width: 500px; }
+
+    /* Embeddings progress */
+    #embed-progress { padding: 0.6rem 2rem; background: #fffbe6; border-bottom: 1px solid #ffe58f; display: none; }
+    #embed-progress .progress { height: 0.9rem; }
+
+    /* Messages flow in normal page flow (page scroll, no nested box) */
+    #messages { padding: 1.5rem 2rem 1rem; max-width: 1000px; margin: 0 auto; }
+    .msg { display: flex; margin-bottom: 1.1rem; }
+    .msg-user { justify-content: flex-end; }
+    .msg-bubble { max-width: 78%; padding: 0.7rem 1rem; border-radius: 1.1rem; line-height: 1.55; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .msg-user .msg-bubble { background: #007bff; color: #fff; border-bottom-right-radius: 0.25rem; }
+    .msg-user .msg-bubble a { color: #cfe3ff; }
+    .msg-assistant .msg-bubble { background: #f1f3f5; color: #212529; border-bottom-left-radius: 0.25rem; }
+    .msg-sources { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid #dee2e6; font-size: 0.85rem; }
+    .msg-sources ol { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+
+    .typing-dots span { display: inline-block; width: 7px; height: 7px; margin-right: 3px; background: #adb5bd; border-radius: 50%; animation: blink 1.2s infinite; }
+    .typing-dots span:nth-child(2) { animation-delay: .2s; }
+    .typing-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+
+    /* Input bar sticks to viewport bottom */
+    #chat-form {
+        position: sticky;
+        bottom: 0;
+        background: #fff;
+        border-top: 1px solid #dee2e6;
+        padding: 0.8rem 2rem;
+        display: flex;
+        gap: 0.6rem;
+    }
+    #chat-input { flex: 1; border-radius: 1.5rem; padding: 0.6rem 1.2rem; }
+    #chat-form .btn { border-radius: 1.5rem; padding: 0.5rem 1.4rem; }
+
+    .conv-item { border-radius: 0.5rem !important; margin-bottom: 0.3rem; border: none !important; font-size: 0.92rem; }
+    .conv-item.active { background: #007bff !important; }
+</style>
 
 {% if not chat_available %}
-<div class="alert alert-warning">
+<div class="alert alert-warning m-3">
     Chat nie jest jeszcze gotowy (brak klucza API w pliku <code>.env</code> lub bazy embeddings).
 </div>
 {% endif %}
 
-<div class="row" style="height: 70vh;">
-    <!-- Sidebar: conversations -->
-    <div class="col-md-3" style="height: 100%; overflow-y: auto;">
-        <button id="new-chat-btn" class="btn btn-primary btn-block mb-2">Nowa rozmowa</button>
+<div class="chat-layout">
+    <aside id="chat-sidebar">
+        <button id="new-chat-btn" class="btn btn-primary btn-block mb-3">+ Nowa rozmowa</button>
+        <h6 class="text-muted text-uppercase" style="font-size:.75rem; letter-spacing:.05em;">Historia rozmów</h6>
         <div id="conversations" class="list-group"></div>
-    </div>
+    </aside>
 
-    <!-- Chat pane -->
-    <div class="col-md-9 d-flex flex-column" style="height: 100%;">
-        <div id="messages" class="border rounded p-3 mb-2 flex-grow-1" style="overflow-y: auto; background: #fafafa;">
+    <main id="chat-main">
+        <div id="chat-header">
+            <h4 id="chat-title">Nowa rozmowa</h4>
+            <button id="edit-title-btn" title="Zmień nazwę rozmowy">✎</button>
+            <input id="title-input" class="form-control form-control-sm" style="display:none;">
+        </div>
+
+        <div id="embed-progress">
+            <small class="text-muted" id="embed-progress-label">Indeksowanie archiwum dla chatu…</small>
+            <div class="progress mt-1">
+                <div id="embed-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" style="width: 0%">0%</div>
+            </div>
+        </div>
+
+        <div id="messages">
             <p class="text-muted">Zadaj pytanie — odpowiedzi powstają na podstawie postów z archiwum forum, z linkami do źródeł.</p>
         </div>
-        <form id="chat-form" class="form-inline">
-            <input id="chat-input" class="form-control flex-grow-1 mr-2" type="text"
+
+        <form id="chat-form">
+            <input id="chat-input" class="form-control" type="text"
                    placeholder="Np. jaki cement pod koronę na implancie?" autocomplete="off" required>
             <button type="submit" class="btn btn-success">Wyślij</button>
         </form>
-    </div>
+    </main>
 </div>
 
 <script>
@@ -34,46 +118,51 @@ let conversationId = null;
 const messagesEl = document.getElementById('messages');
 const form = document.getElementById('chat-form');
 const input = document.getElementById('chat-input');
+const titleEl = document.getElementById('chat-title');
+const titleInput = document.getElementById('title-input');
+const editBtn = document.getElementById('edit-title-btn');
 
 function escapeHtml(s) {
     const d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
 }
+function scrollToBottom() { window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'}); }
 
 function addUserMessage(text) {
     messagesEl.insertAdjacentHTML('beforeend',
-        `<div class="card mb-2 border-secondary"><div class="card-body py-2"><strong>Ty:</strong> ${escapeHtml(text)}</div></div>`);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+        `<div class="msg msg-user"><div class="msg-bubble">${escapeHtml(text)}</div></div>`);
+    scrollToBottom();
 }
 
 function addAssistantMessage(html, sources) {
     let sourcesHtml = '';
     if (sources && sources.length) {
-        sourcesHtml = '<hr><small><strong>Źródła:</strong><ol class="mb-0">' +
+        sourcesHtml = '<div class="msg-sources"><strong>Źródła:</strong><ol>' +
             sources.map(s =>
                 `<li><a href="${s.url}" target="_blank">${escapeHtml(s.title)}</a> ` +
                 `<span class="text-muted">(${escapeHtml(s.author)}, ${escapeHtml(s.date)})</span></li>`
-            ).join('') + '</ol></small>';
+            ).join('') + '</ol></div>';
     }
     messagesEl.insertAdjacentHTML('beforeend',
-        `<div class="card mb-2 border-primary"><div class="card-body py-2">${html}${sourcesHtml}</div></div>`);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+        `<div class="msg msg-assistant"><div class="msg-bubble">${html}${sourcesHtml}</div></div>`);
+    scrollToBottom();
 }
 
 function addError(text) {
     messagesEl.insertAdjacentHTML('beforeend',
         `<div class="alert alert-danger py-2">${escapeHtml(text)}</div>`);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+function setTitle(t) { titleEl.textContent = t || 'Nowa rozmowa'; }
 
 function loadConversations() {
     fetch('/api/conversations')
         .then(r => r.json())
         .then(convs => {
             document.getElementById('conversations').innerHTML = convs.map(c =>
-                `<a href="#" class="list-group-item list-group-item-action ${c.id === conversationId ? 'active' : ''}" ` +
-                `data-id="${c.id}">${escapeHtml(c.title)}</a>`
+                `<a href="#" class="list-group-item list-group-item-action conv-item ${c.id === conversationId ? 'active' : ''}" ` +
+                `data-id="${c.id}" data-title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</a>`
             ).join('');
         });
 }
@@ -83,6 +172,7 @@ document.getElementById('conversations').addEventListener('click', e => {
     if (!a) return;
     e.preventDefault();
     conversationId = parseInt(a.dataset.id);
+    setTitle(a.dataset.title);
     messagesEl.innerHTML = '';
     fetch(`/api/conversations/${conversationId}`)
         .then(r => r.json())
@@ -97,11 +187,42 @@ document.getElementById('conversations').addEventListener('click', e => {
 
 document.getElementById('new-chat-btn').addEventListener('click', () => {
     conversationId = null;
+    setTitle('Nowa rozmowa');
     messagesEl.innerHTML = '<p class="text-muted">Nowa rozmowa. Zadaj pytanie poniżej.</p>';
     loadConversations();
     input.focus();
 });
 
+/* --- editable conversation title --- */
+editBtn.addEventListener('click', () => {
+    if (!conversationId) return;
+    titleEl.style.display = 'none';
+    editBtn.style.display = 'none';
+    titleInput.style.display = '';
+    titleInput.value = titleEl.textContent;
+    titleInput.focus();
+    titleInput.select();
+});
+
+function saveTitle() {
+    const t = titleInput.value.trim();
+    titleInput.style.display = 'none';
+    titleEl.style.display = '';
+    editBtn.style.display = '';
+    if (!t || t === titleEl.textContent) return;
+    fetch(`/api/conversations/${conversationId}/title`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title: t})
+    }).then(() => { setTitle(t); loadConversations(); });
+}
+titleInput.addEventListener('blur', saveTitle);
+titleInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); titleInput.blur(); }
+    if (e.key === 'Escape') { titleInput.value = titleEl.textContent; titleInput.blur(); }
+});
+
+/* --- send --- */
 form.addEventListener('submit', e => {
     e.preventDefault();
     const text = input.value.trim();
@@ -109,10 +230,10 @@ form.addEventListener('submit', e => {
     input.value = '';
     addUserMessage(text);
     const thinking = document.createElement('div');
-    thinking.className = 'text-muted mb-2';
-    thinking.textContent = 'Szukam w archiwum i piszę odpowiedź…';
+    thinking.className = 'msg msg-assistant';
+    thinking.innerHTML = '<div class="msg-bubble typing-dots"><span></span><span></span><span></span></div>';
     messagesEl.appendChild(thinking);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    scrollToBottom();
 
     fetch('/api/chat', {
         method: 'POST',
@@ -123,14 +244,41 @@ form.addEventListener('submit', e => {
         .then(({ok, body}) => {
             thinking.remove();
             if (!ok) { addError(body.error || 'Wystąpił błąd.'); return; }
+            const isNew = !conversationId;
             conversationId = body.conversation_id;
             addAssistantMessage(body.answer_html, body.sources);
+            if (isNew) setTitle(text.slice(0, 80));
             loadConversations();
         })
         .catch(() => { thinking.remove(); addError('Błąd połączenia.'); });
 });
 
+/* --- embeddings progress bar (temporary, hides at 100%) --- */
+function pollEmbeddings() {
+    fetch('/api/embeddings/status')
+        .then(r => r.json())
+        .then(s => {
+            const box = document.getElementById('embed-progress');
+            const bar = document.getElementById('embed-progress-bar');
+            const label = document.getElementById('embed-progress-label');
+            if (s.percent >= 100) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            bar.style.width = s.percent + '%';
+            bar.textContent = s.percent + '%';
+            let txt = `Indeksowanie archiwum dla chatu: ${s.done.toLocaleString()}/${s.total.toLocaleString()} postów`;
+            if (s.running && s.eta_min != null) {
+                txt += ` — ${s.rate_per_min.toLocaleString()} postów/min, zostało ok. ${s.eta_min} min`;
+            } else if (!s.running) {
+                txt += ' (generowanie wstrzymane — uruchom tools/build_embeddings.py)';
+            }
+            label.textContent = txt;
+            setTimeout(pollEmbeddings, 15000);
+        })
+        .catch(() => setTimeout(pollEmbeddings, 30000));
+}
+
 loadConversations();
+pollEmbeddings();
 input.focus();
 </script>
 {% endblock %}

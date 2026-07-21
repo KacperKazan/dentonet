@@ -324,15 +324,34 @@ def chat_available():
     return bool(GEMINI_API_KEY) and VEC_DB_PATH.exists()
 
 
+def gemini_with_retry(fn, attempts=4):
+    """Retry Gemini calls on 429 (the embedding build can saturate the quota)."""
+    import time
+
+    delay = 20
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            msg = str(e)
+            if ("429" in msg or "RESOURCE_EXHAUSTED" in msg) and attempt < attempts - 1:
+                time.sleep(delay)
+                delay = min(delay * 2, 90)
+            else:
+                raise
+
+
 def embed_query(text):
     from google.genai import types
 
-    r = get_genai().models.embed_content(
-        model=EMBED_MODEL,
-        contents=text,
-        config=types.EmbedContentConfig(
-            output_dimensionality=EMBED_DIMS, task_type="RETRIEVAL_QUERY"
-        ),
+    r = gemini_with_retry(
+        lambda: get_genai().models.embed_content(
+            model=EMBED_MODEL,
+            contents=text,
+            config=types.EmbedContentConfig(
+                output_dimensionality=EMBED_DIMS, task_type="RETRIEVAL_QUERY"
+            ),
+        )
     )
     return r.embeddings[0].values
 
@@ -433,6 +452,34 @@ def chat():
     return render_template("chat.html", chat_available=chat_available())
 
 
+@app.route("/api/embeddings/status")
+def embeddings_status():
+    """Progress of tools/build_embeddings.py (read from its meta table)."""
+    total = get_db().execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+    if not VEC_DB_PATH.exists():
+        return jsonify({"done": 0, "total": total, "percent": 0, "running": False})
+    vec = get_vecdb()
+    meta = dict(vec.execute("SELECT key, value FROM meta").fetchall())
+    done = int(meta.get("last_rowid", 0))
+    rate = float(meta.get("rate_per_min", 0) or 0)
+    updated_at = int(meta.get("updated_at", 0) or 0)
+    import time as _time
+
+    running = (_time.time() - updated_at) < 90 and done < total
+    percent = min(100, round(done * 100 / total, 1))
+    eta_min = round((total - done) / rate) if rate > 0 else None
+    return jsonify(
+        {
+            "done": done,
+            "total": total,
+            "percent": percent,
+            "rate_per_min": round(rate),
+            "eta_min": eta_min,
+            "running": running,
+        }
+    )
+
+
 @app.route("/api/conversations")
 def list_conversations():
     rows = get_chatsdb().execute(
@@ -459,6 +506,20 @@ def get_conversation(conv_id):
             }
         )
     return jsonify(out)
+
+
+@app.route("/api/conversations/<int:conv_id>/title", methods=["POST"])
+def rename_conversation(conv_id):
+    title = (request.get_json(force=True).get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "Pusty tytuł."}), 400
+    chats = get_chatsdb()
+    with chats:
+        chats.execute(
+            "UPDATE conversations SET title = ? WHERE id = ?", (title, conv_id)
+        )
+    chats.commit()
+    return jsonify({"ok": True, "title": title})
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -495,17 +556,30 @@ def api_chat():
         )
         conv_id = cur.lastrowid
 
-    sources = retrieve_posts(question)
-    contents = build_chat_contents(history, question, sources)
+    try:
+        sources = retrieve_posts(question)
+        contents = build_chat_contents(history, question, sources)
 
-    from google.genai import types
+        from google.genai import types
 
-    response = get_genai().models.generate_content(
-        model=CHAT_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-    )
-    answer_text = response.text
+        response = gemini_with_retry(
+            lambda: get_genai().models.generate_content(
+                model=CHAT_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+        )
+        answer_text = response.text
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "error": "Usługa Gemini jest chwilowo przeciążona "
+                    "(trwa indeksowanie archiwum). Spróbuj ponownie za minutę."
+                }
+            ),
+            503,
+        )
     answer_html = render_answer_html(answer_text, sources)
 
     with chats:
