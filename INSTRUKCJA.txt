@@ -51,8 +51,24 @@ WAZNE
 PROBLEMY?
 ---------
 
-Windows: jesli system pyta czy uruchomic plik,
-wybierz "Wiecej informacji" -> "Uruchom mimo to".
+WINDOWS - komunikat "Windows protected your PC" /
+"System Windows chronil Twoj komputer" (SmartScreen):
+  kliknij "Wiecej informacji" -> "Uruchom mimo to".
+
+WINDOWS - komunikat "Smart App Control" ZABLOKOWAL
+plik (bez przycisku "Uruchom mimo to"):
+  Ta funkcja Windows 11 blokuje wszystkie niepodpisane
+  programy i nie ma przycisku "uruchom mimo to".
+  Trzeba ja jednorazowo wylaczyc (mozna wlaczyc
+  z powrotem w dowolnym momencie):
+    1. Otworz Ustawienia (klawisz Windows + I)
+    2. Prywatnosc i zabezpieczenia
+    3. Zabezpieczenia Windows
+    4. Kontrola aplikacji i przegladarki
+    5. Ustawienia funkcji Smart App Control
+    6. Wybierz "Wylacz"
+  Potem kliknij ponownie "Start Dentonet (Windows).bat"
+  - zadziala od razu.
 
 Mac: jesli dwuklik nie dziala:
   a) kliknij plik PRAWYM przyciskiem myszy
