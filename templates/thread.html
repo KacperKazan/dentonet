@@ -1,11 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.post-card:target {
+    border-color: #ffc107 !important;
+    background-color: #fff3cd;
+    box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.5);
+}
+.post-card:target .card-header {
+    background-color: #ffeeba;
+}
+</style>
 <h2>{{ thread.title }}</h2>
 <p>By {{ thread.author.username }} on {{ thread.date }}</p>
 <hr>
 <div class="container">
     {% for post in posts %}
-    <div class="card mb-3 border border-primary">
+    <div class="card mb-3 border border-primary post-card" id="post-{{ post.idx }}">
         <div class="card-header">
             {{ post.author.username }} on {{ post.datetime }}
         </div>

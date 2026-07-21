@@ -171,6 +171,7 @@ def thread(collection_name, thread_id, page=1, mark=""):
     end_idx = start_idx + POSTS_PER_THREAD_PAGE
     paginated_posts = [
         {
+            "idx": p["idx"],
             "author": {"username": p["author"]},
             "datetime": p["datetime"],
             "content": p["content"],
@@ -383,6 +384,8 @@ def retrieve_posts(query, k=TOP_K):
         )
         if query and query in p["content"]:
             url_kwargs["mark"] = query
+        # scroll to exact post and highlight it
+        url = url_for("thread", **url_kwargs) + f"#post-{p['idx']}"
         sources.append(
             {
                 "n": i,
@@ -390,7 +393,7 @@ def retrieve_posts(query, k=TOP_K):
                 "author": p["author"],
                 "date": p["datetime"],
                 "content": p["content"][:2000],
-                "url": url_for("thread", **url_kwargs),
+                "url": url,
             }
         )
     return sources
